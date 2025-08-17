@@ -1,0 +1,6 @@
+{
+  "name": "Copy of BlocklyPython AI",
+  "description": "A visual block-based programming tool to learn Python, with AI-powered code explanations. Drag blocks from the left panel to the workspace, connect them, and see the Python code generate in real-time. Use the AI assistant to get explanations for your code.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

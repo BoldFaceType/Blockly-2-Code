@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlocklyPython AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root, .theme-light {
+        --toolbox-bg: #ffffff;
+        --workspace-bg: #f5f5f5;
+        --code-bg: #1e1e1e;
+        --code-text: #d4d4d4;
+        --border-color: #dddddd;
+        --text-color: #333333;
+        --grid-color: #f0f0f0;
+        --hint-color: #999999;
+      }
+      .theme-vscode-dark {
+        --toolbox-bg: #252526;
+        --workspace-bg: #1e1e1e;
+        --code-bg: #1e1e1e;
+        --code-text: #d4d4d4;
+        --border-color: #3c3c3c;
+        --text-color: #cccccc;
+        --grid-color: #333333;
+        --hint-color: #6a6a6a;
+      }
+      .theme-monokai {
+        --toolbox-bg: #2d2a2e;
+        --workspace-bg: #272822;
+        --code-bg: #2d2a2e;
+        --code-text: #fcfcfa;
+        --border-color: #403e41;
+        --text-color: #fcfcfa;
+        --grid-color: #403e41;
+        --hint-color: #727072;
+      }
+      .theme-dracula {
+        --toolbox-bg: #282a36;
+        --workspace-bg: #21222C;
+        --code-bg: #282a36;
+        --code-text: #f8f8f2;
+        --border-color: #44475a;
+        --text-color: #f8f8f2;
+        --grid-color: #44475a;
+        --hint-color: #6272a4;
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--workspace-bg);
+        color: var(--text-color);
+      }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.12.0",
+    "react/": "https://esm.sh/react@^19.1.1/",
+    "react": "https://esm.sh/react@^19.1.1"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
