@@ -25,6 +25,37 @@ const extractPotentialVariables = (value: string): string[] => {
     return tokens.filter(token => !PYTHON_KEYWORDS.has(token) && isNaN(parseInt(token, 10)));
 }
 
+export const generateCodeRecursive = (block: WorkspaceBlock, indent: string, BLOCKS: any): string => {
+  const definition = BLOCKS[block.type];
+  if (!definition) return '';
+
+  let line = definition.template;
+
+  // Process inputs and nested expression blocks
+  definition.inputs.forEach(input => {
+    const nestedBlock = block.inputBlocks?.[input.name];
+    let value: string;
+    if (nestedBlock) {
+      value = generateCodeRecursive(nestedBlock, '', BLOCKS); // Expressions don't get indented
+    } else {
+      value = block.inputValues[input.name] || input.placeholder || '';
+    }
+    line = line.replace(`{${input.name}}`, value);
+  });
+
+  // Process nested statement blocks
+  definition.nestableAreas?.forEach(area => {
+    const children = block.children?.[area.name] || [];
+    const childIndent = indent + '  ';
+    const childrenCode = children.length > 0
+      ? children.map(child => generateCodeRecursive(child, childIndent, BLOCKS)).join('\n')
+      : `\n${childIndent}pass`;
+    line = line.replace(`{${area.name}}`, childrenCode);
+  });
+
+  return indent + line;
+};
+
 const App: React.FC = () => {
   const [allBlocks, setAllBlocks] = useState<WorkspaceBlock[]>([]);
   const [isCodeVisible, setIsCodeVisible] = useState(false);
@@ -45,36 +76,6 @@ const App: React.FC = () => {
     document.body.className = `theme-${theme}`;
   }, [theme]);
   
-  const generateCodeRecursive = useCallback((block: WorkspaceBlock, indent: string): string => {
-    const definition = BLOCKS[block.type];
-    if (!definition) return '';
-
-    let line = definition.template;
-
-    // Process inputs and nested expression blocks
-    definition.inputs.forEach(input => {
-      const nestedBlock = block.inputBlocks?.[input.name];
-      let value: string;
-      if (nestedBlock) {
-        value = generateCodeRecursive(nestedBlock, ''); // Expressions don't get indented
-      } else {
-        value = block.inputValues[input.name] || input.placeholder || '';
-      }
-      line = line.replace(`{${input.name}}`, value);
-    });
-
-    // Process nested statement blocks
-    definition.nestableAreas?.forEach(area => {
-      const children = block.children?.[area.name] || [];
-      const childIndent = indent + '  ';
-      const childrenCode = children.length > 0
-        ? children.map(child => generateCodeRecursive(child, childIndent)).join('\n')
-        : `${childIndent}pass`;
-      line = line.replace(`{${area.name}}`, childrenCode);
-    });
-    
-    return indent + line;
-  }, []);
   
   const generateCode = useCallback(() => {
     const topLevelBlocks = findTopLevelBlocks(allBlocks);
@@ -84,9 +85,9 @@ const App: React.FC = () => {
     }
 
     const sortedBlocks = [...topLevelBlocks].sort((a, b) => (a.x || 0) - (b.x || 0));
-    const code = sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
+    const code = sortedBlocks.map(block => generateCodeRecursive(block, '', BLOCKS)).join('\n');
     setGeneratedCode(code);
-  }, [allBlocks, generateCodeRecursive]);
+  }, [allBlocks]);
 
 
   useEffect(() => {
