@@ -16,14 +16,38 @@ import {
     findBlock,
     findTopLevelBlocks,
 } from './utils/blockTree';
+import { validateWorkspaceRecursive } from './utils/validation';
 
-const PYTHON_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'for', 'if', 'else', 'while', 'def', 'return', 'True', 'False', 'None', 'print', 'range', 'break', 'continue', 'class', 'import', 'from', 'as', 'try', 'except', 'finally', 'with', 'yield', 'lambda', 'pass']);
+export const generateCodeRecursive = (block: WorkspaceBlock, indent: string, BLOCKS: any): string => {
+  const definition = BLOCKS[block.type];
+  if (!definition) return '';
 
-const extractPotentialVariables = (value: string): string[] => {
-    if (!value) return [];
-    const tokens = value.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
-    return tokens.filter(token => !PYTHON_KEYWORDS.has(token) && isNaN(parseInt(token, 10)));
-}
+  let line = definition.template;
+
+  // Process inputs and nested expression blocks
+  definition.inputs.forEach(input => {
+    const nestedBlock = block.inputBlocks?.[input.name];
+    let value: string;
+    if (nestedBlock) {
+      value = generateCodeRecursive(nestedBlock, '', BLOCKS); // Expressions don't get indented
+    } else {
+      value = block.inputValues[input.name] || input.placeholder || '';
+    }
+    line = line.replace(`{${input.name}}`, value);
+  });
+
+  // Process nested statement blocks
+  definition.nestableAreas?.forEach(area => {
+    const children = block.children?.[area.name] || [];
+    const childIndent = indent + '  ';
+    const childrenCode = children.length > 0
+      ? children.map(child => generateCodeRecursive(child, childIndent, BLOCKS)).join('\n')
+      : `\n${childIndent}pass`;
+    line = line.replace(`{${area.name}}`, childrenCode);
+  });
+
+  return indent + line;
+};
 
 const App: React.FC = () => {
   const [allBlocks, setAllBlocks] = useState<WorkspaceBlock[]>([]);
@@ -45,36 +69,6 @@ const App: React.FC = () => {
     document.body.className = `theme-${theme}`;
   }, [theme]);
   
-  const generateCodeRecursive = useCallback((block: WorkspaceBlock, indent: string): string => {
-    const definition = BLOCKS[block.type];
-    if (!definition) return '';
-
-    let line = definition.template;
-
-    // Process inputs and nested expression blocks
-    definition.inputs.forEach(input => {
-      const nestedBlock = block.inputBlocks?.[input.name];
-      let value: string;
-      if (nestedBlock) {
-        value = generateCodeRecursive(nestedBlock, ''); // Expressions don't get indented
-      } else {
-        value = block.inputValues[input.name] || input.placeholder || '';
-      }
-      line = line.replace(`{${input.name}}`, value);
-    });
-
-    // Process nested statement blocks
-    definition.nestableAreas?.forEach(area => {
-      const children = block.children?.[area.name] || [];
-      const childIndent = indent + '  ';
-      const childrenCode = children.length > 0
-        ? children.map(child => generateCodeRecursive(child, childIndent)).join('\n')
-        : `${childIndent}pass`;
-      line = line.replace(`{${area.name}}`, childrenCode);
-    });
-    
-    return indent + line;
-  }, []);
   
   const generateCode = useCallback(() => {
     const topLevelBlocks = findTopLevelBlocks(allBlocks);
@@ -84,9 +78,9 @@ const App: React.FC = () => {
     }
 
     const sortedBlocks = [...topLevelBlocks].sort((a, b) => (a.x || 0) - (b.x || 0));
-    const code = sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
+    const code = sortedBlocks.map(block => generateCodeRecursive(block, '', BLOCKS)).join('\n');
     setGeneratedCode(code);
-  }, [allBlocks, generateCodeRecursive]);
+  }, [allBlocks]);
 
 
   useEffect(() => {
@@ -280,91 +274,8 @@ const App: React.FC = () => {
   const handleZoomIn = () => setZoom(z => Math.min(2, z + 0.1));
   const handleZoomOut = () => setZoom(z => Math.max(0.3, z - 0.1));
   
-  // Recursive validation logic
   useEffect(() => {
-    const validateWorkspaceRecursive = (blocks: WorkspaceBlock[], parentSymbolTable: Set<string>): {validatedBlocks: WorkspaceBlock[], hasChanged: boolean} => {
-        let hasErrorsChanged = false;
-        
-        const validatedBlocks = blocks.map(block => {
-            const definition = BLOCKS[block.type];
-            if (!definition) return block;
-
-            const blockSymbolTable = new Set(parentSymbolTable);
-            const blockErrors: { [inputId: string]: string | null } = {};
-
-            // Add variables from this block to the symbol table for its children
-            switch (block.type) {
-                case 'variable':
-                    if (block.inputValues.name) blockSymbolTable.add(block.inputValues.name);
-                    break;
-                case 'for_loop':
-                    if (block.inputValues.var) blockSymbolTable.add(block.inputValues.var);
-                    break;
-                case 'function_def':
-                    if (block.inputValues.name) blockSymbolTable.add(block.inputValues.name);
-                    (block.inputValues.params || '').split(',').map(p => p.trim()).filter(Boolean).forEach(p => blockSymbolTable.add(p));
-                    break;
-            }
-
-            // Validate inputs
-            definition.inputs.forEach(input => {
-                const value = block.inputValues[input.name] || '';
-                let error: string | null = null;
-                
-                if (!block.inputBlocks[input.name]) { // Only validate if not replaced by a block
-                    if (input.validation && value) {
-                        if (!new RegExp(input.validation.pattern).test(value)) {
-                            error = input.validation.message;
-                        }
-                    }
-                    if (!error) {
-                        const potentialVars = extractPotentialVariables(value);
-                        for (const pv of potentialVars) {
-                            if (!blockSymbolTable.has(pv)) {
-                                error = `Undeclared variable: '${pv}'`;
-                                break;
-                            }
-                        }
-                    }
-                }
-                blockErrors[input.name] = error;
-            });
-            
-            // Recursively validate children
-            const newChildren: { [areaName: string]: WorkspaceBlock[] } = {};
-            if (definition.nestableAreas) {
-                for(const area of definition.nestableAreas) {
-                    const result = validateWorkspaceRecursive(block.children[area.name] || [], blockSymbolTable);
-                    newChildren[area.name] = result.validatedBlocks;
-                    if(result.hasChanged) hasErrorsChanged = true;
-                }
-            }
-
-            // Recursively validate input blocks
-            const newInputBlocks: { [inputName: string]: WorkspaceBlock | undefined } = {};
-             if (block.inputBlocks) {
-                for(const inputName in block.inputBlocks) {
-                    const inputBlock = block.inputBlocks[inputName];
-                    if (inputBlock) {
-                        const result = validateWorkspaceRecursive([inputBlock], blockSymbolTable);
-                        newInputBlocks[inputName] = result.validatedBlocks[0];
-                        if(result.hasChanged) hasErrorsChanged = true;
-                    }
-                }
-            }
-            
-            const newBlock = { ...block, validationErrors: blockErrors, children: newChildren, inputBlocks: newInputBlocks };
-            if (JSON.stringify(block.validationErrors || {}) !== JSON.stringify(blockErrors)) {
-                hasErrorsChanged = true;
-            }
-
-            return newBlock;
-        });
-
-        return { validatedBlocks, hasChanged: hasErrorsChanged };
-    };
-    
-    const { validatedBlocks, hasChanged } = validateWorkspaceRecursive(allBlocks, new Set(PYTHON_KEYWORDS));
+    const { validatedBlocks, hasChanged } = validateWorkspaceRecursive(allBlocks, new Set());
     if (hasChanged) {
       setAllBlocks(validatedBlocks);
     }
