@@ -1,45 +1,40 @@
 
-import { WorkspaceBlock } from '../types.ts';
-import { generateCodeRecursive } from '../App.tsx';
+import { describe, it, expect } from 'vitest';
+import { WorkspaceBlock } from '../types';
+import { generateCodeRecursive } from '../App';
+import { BLOCKS } from '../constants';
 
-import { BLOCKS as APP_BLOCKS } from '../constants';
+describe('generateCodeRecursive', () => {
+  const createBlock = (type: string, inputValues: Record<string, string> = {}, children: Record<string, WorkspaceBlock[]> = {}, inputBlocks: Record<string, WorkspaceBlock> = {}): WorkspaceBlock => ({
+    id: `block_${Math.random()}`,
+    type,
+    inputValues,
+    inputBlocks,
+    children,
+  });
 
-const BLOCKS = {
-  ...APP_BLOCKS,
-  if_else_stmt: {
-    ...APP_BLOCKS.if_else_stmt,
-    template: 'if {condition}: {body}\nelse: {else_body}',
-  }
-};
+  Object.keys(BLOCKS).forEach(blockType => {
+    it(`should generate code for a ${blockType} block`, () => {
+      const definition = BLOCKS[blockType];
+      const inputValues: Record<string, string> = {};
+      definition.inputs.forEach(input => {
+        inputValues[input.name] = input.placeholder || '';
+      });
+      const block = createBlock(blockType, inputValues);
+      const code = generateCodeRecursive(block, '', BLOCKS);
+      expect(code).toBeDefined();
+    });
+  });
 
-const testGenerateCodeWithEmptyNestedBlock = () => {
-  const block: WorkspaceBlock = {
-    id: '1',
-    type: 'if_else_stmt',
-    inputValues: { condition: 'True' },
-    inputBlocks: {},
-    children: {
-      body: [],
-      else_body: [],
-    },
-    x: 0,
-    y: 0,
-  };
+  it('should generate code for a complex nested structure', () => {
+    const printBlock = createBlock('print', { value: 'i' });
+    const forLoopBlock = createBlock('for_loop', { var: 'i', iterable: 'range(3)' }, { body: [printBlock] });
+    const functionDefBlock = createBlock('function_def', { name: 'my_function', params: 'arg1' }, { body: [forLoopBlock] });
 
-  const expectedCode = 'if True: \n  pass\nelse: \n  pass';
-  const actualCode = generateCodeRecursive(block, '', BLOCKS);
-
-  if (actualCode !== expectedCode) {
-    console.error(`Test failed!
-      Expected:
-      '${expectedCode}'
-
-      Got:
-      '${actualCode}'`);
-    process.exit(1);
-  } else {
-    console.log('Test passed!');
-  }
-};
-
-testGenerateCodeWithEmptyNestedBlock();
+    const expectedCode = `def my_function(arg1):
+  for i in range(3):
+    print(i)`;
+    const actualCode = generateCodeRecursive(functionDefBlock, '', BLOCKS);
+    expect(actualCode).toBe(expectedCode);
+  });
+});
