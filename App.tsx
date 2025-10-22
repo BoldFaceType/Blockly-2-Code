@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { WorkspaceBlock, Theme, ProjectData } from './types';
 import { BLOCKS, THEMES } from './constants';
 import { Controls } from './components/Controls';
@@ -8,6 +8,7 @@ import { Workspace } from './components/Workspace';
 import { CodeView } from './components/CodeView';
 import { AiModal } from './components/AiModal';
 import { ZoomControls } from './components/ZoomControls';
+import { PwaReloadPrompt } from './components/PwaReloadPrompt';
 import { explainPythonCode } from './services/geminiService';
 import { 
     findAndRemoveBlock,
@@ -25,27 +26,9 @@ const extractPotentialVariables = (value: string): string[] => {
     return tokens.filter(token => !PYTHON_KEYWORDS.has(token) && isNaN(parseInt(token, 10)));
 }
 
-const App: React.FC = () => {
-  const [allBlocks, setAllBlocks] = useState<WorkspaceBlock[]>([]);
-  const [isCodeVisible, setIsCodeVisible] = useState(false);
-  const [theme, setTheme] = useState<Theme>('vscode-dark');
-  const [generatedCode, setGeneratedCode] = useState('');
-  
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [aiExplanation, setAiExplanation] = useState('');
-  const [isLoadingAi, setIsLoadingAi] = useState(false);
-
-  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
-  const clearConfirmTimeoutRef = useRef<number | null>(null);
-
-  const [zoom, setZoom] = useState(1);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    document.body.className = `theme-${theme}`;
-  }, [theme]);
-  
-  const generateCodeRecursive = useCallback((block: WorkspaceBlock, indent: string): string => {
+// Define the recursive function outside of the main component scope but within the module.
+// This avoids the ESLint error about accessing it before initialization within the useCallback hook.
+const generateCodeRecursive = (block: WorkspaceBlock, indent: string): string => {
     const definition = BLOCKS[block.type];
     if (!definition) return '';
 
@@ -74,24 +57,38 @@ const App: React.FC = () => {
     });
     
     return indent + line;
-  }, []);
+  };
+
+const App: React.FC = () => {
+  const [allBlocks, setAllBlocks] = useState<WorkspaceBlock[]>([]);
+  const [isCodeVisible, setIsCodeVisible] = useState(false);
+  const [theme, setTheme] = useState<Theme>('vscode-dark');
   
-  const generateCode = useCallback(() => {
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  const clearConfirmTimeoutRef = useRef<number | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.body.className = `theme-${theme}`;
+  }, [theme]);
+  
+  // By calculating generatedCode directly in the render cycle, we avoid using useEffect and useState for derived state.
+  // This is more efficient and aligns with React best practices.
+  const generatedCode = useMemo(() => {
     const topLevelBlocks = findTopLevelBlocks(allBlocks);
     if (topLevelBlocks.length === 0) {
-      setGeneratedCode('# Add blocks to the workspace to generate Python code.');
-      return;
+      return '# Add blocks to the workspace to generate Python code.';
     }
 
     const sortedBlocks = [...topLevelBlocks].sort((a, b) => (a.x || 0) - (b.x || 0));
-    const code = sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
-    setGeneratedCode(code);
-  }, [allBlocks, generateCodeRecursive]);
-
-
-  useEffect(() => {
-    generateCode();
-  }, [allBlocks, generateCode]);
+    return sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
+  }, [allBlocks]);
   
   const handleUpdateBlockPosition = useCallback((id: string, x: number, y: number) => {
     setAllBlocks(prev => findAndUpdateBlock(prev, id, b => ({ ...b, x, y })) || prev);
@@ -261,7 +258,7 @@ const App: React.FC = () => {
             } else {
                 alert('Invalid project file format.');
             }
-        } catch (error) {
+        } catch {
             alert('Error reading project file.');
         }
     };
@@ -270,7 +267,17 @@ const App: React.FC = () => {
   }, []);
 
   const handleExplainCode = useCallback(async () => {
+    // Open the modal immediately to show loading or offline status.
     setIsAiModalOpen(true);
+
+    // Check if the browser is currently online before making an API call.
+    // This is a crucial step for PWA offline capability.
+    if (!navigator.onLine) {
+      setAiExplanation("You appear to be offline. This feature requires an internet connection to contact the AI.");
+      setIsLoadingAi(false); // Ensure loading state is turned off.
+      return;
+    }
+
     setIsLoadingAi(true);
     const explanation = await explainPythonCode(generatedCode);
     setAiExplanation(explanation);
@@ -366,6 +373,9 @@ const App: React.FC = () => {
     
     const { validatedBlocks, hasChanged } = validateWorkspaceRecursive(allBlocks, new Set(PYTHON_KEYWORDS));
     if (hasChanged) {
+      // This effect synchronizes the block state with its own validation results.
+      // It can cause a double render, but it is necessary for real-time validation feedback.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAllBlocks(validatedBlocks);
     }
   }, [allBlocks]);
@@ -373,6 +383,8 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col font-sans bg-[var(--workspace-bg)]">
+      {/* The PWA Reload Prompt component handles showing a notification to the user when a new version of the app is available. */}
+      <PwaReloadPrompt />
       <Controls 
         isCodeVisible={isCodeVisible}
         onToggleCodeView={() => setIsCodeVisible(v => !v)}
@@ -424,11 +436,11 @@ export default App;
 // For this environment, it's embedded here.
 declare global {
     interface Window {
-        findAndRemoveBlock: any;
-        findAndAddBlock: any;
-        findAndUpdateBlock: any;
-        findBlock: any;
-        findTopLevelBlocks: any;
+        findAndRemoveBlock: typeof findAndRemoveBlock;
+        findAndAddBlock: typeof findAndAddBlock;
+        findAndUpdateBlock: typeof findAndUpdateBlock;
+        findBlock: typeof findBlock;
+        findTopLevelBlocks: typeof findTopLevelBlocks;
     }
 }
 

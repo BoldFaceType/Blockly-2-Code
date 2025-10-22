@@ -7,6 +7,8 @@
     <title>BlocklyPython AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      /* Google Fonts import must stay before other rules to satisfy PostCSS ordering */
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
       :root, .theme-light {
         --toolbox-bg: #ffffff;
         --workspace-bg: #f5f5f5;
@@ -52,7 +54,6 @@
         background-color: var(--workspace-bg);
         color: var(--text-color);
       }
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
     </style>
   <script type="importmap">
 {
@@ -64,6 +65,8 @@
   }
 }
 </script>
+  <!-- Load the Vite entry module so the React app actually mounts -->
+  <script type="module" src="/index.tsx"></script>
 </head>
   <body>
     <div id="root"></div>
