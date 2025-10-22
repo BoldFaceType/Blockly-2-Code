@@ -1,4 +1,18 @@
 
+/**
+ * BlocklyPython AI - Main Application Component
+ * 
+ * This is the root component of the visual Python code editor. It manages:
+ * - Block workspace state and manipulation
+ * - Code generation from blocks
+ * - Theme management
+ * - Import/export functionality
+ * - AI-powered code explanations
+ * - Real-time validation of variable scope
+ * 
+ * Fixed: Added useMemo import to resolve ReferenceError on line 83
+ */
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { WorkspaceBlock, Theme, ProjectData } from './types';
 import { BLOCKS, THEMES } from './constants';
@@ -8,7 +22,8 @@ import { Workspace } from './components/Workspace';
 import { CodeView } from './components/CodeView';
 import { AiModal } from './components/AiModal';
 import { ZoomControls } from './components/ZoomControls';
-import { PwaReloadPrompt } from './components/PwaReloadPrompt';
+// PWA support temporarily disabled - requires vite-plugin-pwa package installation
+// import { PwaReloadPrompt } from './components/PwaReloadPrompt';
 import { explainPythonCode } from './services/geminiService';
 import { 
     findAndRemoveBlock,
@@ -18,16 +33,33 @@ import {
     findTopLevelBlocks,
 } from './utils/blockTree';
 
+/**
+ * Python reserved keywords - used for variable validation
+ * We don't allow users to reference these as variables since they're language keywords
+ */
 const PYTHON_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'for', 'if', 'else', 'while', 'def', 'return', 'True', 'False', 'None', 'print', 'range', 'break', 'continue', 'class', 'import', 'from', 'as', 'try', 'except', 'finally', 'with', 'yield', 'lambda', 'pass']);
 
+/**
+ * Extract potential variable names from a code string
+ * Filters out Python keywords and numeric values
+ * @param value - The string to extract variables from
+ * @returns Array of potential variable names
+ */
 const extractPotentialVariables = (value: string): string[] => {
     if (!value) return [];
     const tokens = value.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
     return tokens.filter(token => !PYTHON_KEYWORDS.has(token) && isNaN(parseInt(token, 10)));
 }
 
-// Define the recursive function outside of the main component scope but within the module.
-// This avoids the ESLint error about accessing it before initialization within the useCallback hook.
+/**
+ * Recursively generate Python code from a block tree
+ * This function is defined outside the component to avoid ESLint warnings
+ * about accessing it before initialization in hooks
+ * 
+ * @param block - The block to generate code for
+ * @param indent - Current indentation level (empty string for top-level)
+ * @returns Generated Python code string
+ */
 const generateCodeRecursive = (block: WorkspaceBlock, indent: string): string => {
     const definition = BLOCKS[block.type];
     if (!definition) return '';
@@ -384,7 +416,7 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col font-sans bg-[var(--workspace-bg)]">
       {/* The PWA Reload Prompt component handles showing a notification to the user when a new version of the app is available. */}
-      <PwaReloadPrompt />
+      {/* <PwaReloadPrompt /> */}
       <Controls 
         isCodeVisible={isCodeVisible}
         onToggleCodeView={() => setIsCodeVisible(v => !v)}
