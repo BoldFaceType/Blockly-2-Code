@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { CloseIcon } from './Icons';
 
@@ -40,7 +39,7 @@ export const AiModal: React.FC<AiModalProps> = ({ isOpen, onClose, explanation, 
                     </button>
                 </div>
                 <div className="p-6 overflow-y-auto">
-                    {isLoading ? (
+                    {isLoading && !explanation ? (
                         <div className="flex items-center justify-center h-48">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--text-color)]"></div>
                         </div>

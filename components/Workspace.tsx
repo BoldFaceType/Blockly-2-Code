@@ -8,12 +8,13 @@ interface WorkspaceProps {
   blocks: WorkspaceBlock[];
   onUpdatePosition: (id: string, x: number, y: number) => void;
   onUpdateValue: (blockId: string, inputName: string, value: string) => void;
+  onUpdateComment: (blockId: string, comment: string) => void;
   onDelete: (id: string) => void;
   onDropOnBlock: (e: React.DragEvent<HTMLDivElement>) => void;
   zoom: number;
 }
 
-export const Workspace: React.FC<WorkspaceProps> = ({ blocks, onUpdatePosition, onUpdateValue, onDelete, onDropOnBlock, zoom }) => {
+export const Workspace: React.FC<WorkspaceProps> = ({ blocks, onUpdatePosition, onUpdateValue, onUpdateComment, onDelete, onDropOnBlock, zoom }) => {
   return (
     <div
       className="relative bg-[var(--workspace-bg)]"
@@ -41,6 +42,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ blocks, onUpdatePosition, 
           data={block}
           onUpdatePosition={onUpdatePosition}
           onUpdateValue={onUpdateValue}
+          onUpdateComment={onUpdateComment}
           onDelete={onDelete}
           onDropOnBlock={onDropOnBlock}
           zoom={zoom}

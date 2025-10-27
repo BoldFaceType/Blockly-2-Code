@@ -50,6 +50,7 @@ export interface WorkspaceBlock {
   inputBlocks: { [key: string]: WorkspaceBlock | undefined };
   children: { [areaName: string]: WorkspaceBlock[] };
   validationErrors: { [key: string]: string | null };
+  comment?: string;
 }
 
 export type Theme = 'light' | 'vscode-dark' | 'monokai' | 'dracula';
@@ -58,4 +59,10 @@ export interface ProjectData {
   blocks: WorkspaceBlock[];
   theme: Theme;
   timestamp: string;
+}
+
+export interface Lesson {
+  title: string;
+  description: string;
+  initialBlocks: WorkspaceBlock[];
 }

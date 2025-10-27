@@ -1,7 +1,7 @@
 
 import React, { useRef } from 'react';
 import { Theme } from '../types';
-import { CodeIcon, BlocksIcon, ThemeIcon, ExportIcon, ImportIcon, ClearIcon, AiIcon } from './Icons';
+import { CodeIcon, BlocksIcon, ThemeIcon, ExportIcon, ImportIcon, ClearIcon, AiIcon, UndoIcon, RedoIcon, BookOpenIcon } from './Icons';
 
 interface ControlsProps {
   isCodeVisible: boolean;
@@ -13,12 +13,16 @@ interface ControlsProps {
   onExplainCode: () => void;
   isLoadingAi: boolean;
   isConfirmingClear: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onShowLessons: () => void;
 }
 
 const ControlButton = ({ children, onClick, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode, className?: string }) => {
     const baseClasses = "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md bg-white/10 text-[var(--text-color)] hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
     
-    // Simple className merge. For more complex cases, a utility like tailwind-merge would be better.
     return (
         <button
             onClick={onClick}
@@ -41,6 +45,11 @@ export const Controls: React.FC<ControlsProps> = ({
   onExplainCode,
   isLoadingAi,
   isConfirmingClear,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onShowLessons,
 }) => {
     const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,6 +65,9 @@ export const Controls: React.FC<ControlsProps> = ({
         {isCodeVisible ? 'Show Blocks' : 'Show Code'}
       </ControlButton>
       <ControlButton onClick={onCycleTheme}><ThemeIcon className="w-4 h-4"/>Theme</ControlButton>
+      <ControlButton onClick={onShowLessons}><BookOpenIcon className="w-4 h-4"/>Lessons</ControlButton>
+      <ControlButton onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)"><UndoIcon className="w-4 h-4"/>Undo</ControlButton>
+      <ControlButton onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)"><RedoIcon className="w-4 h-4"/>Redo</ControlButton>
       <div className="flex-grow"></div>
       <ControlButton onClick={onExplainCode} disabled={isLoadingAi}>
         <AiIcon className="w-4 h-4"/>
