@@ -1,50 +1,25 @@
 
-/**
- * BlocklyPython AI - Main Application Component
- * 
- * This is the root component of the visual Python code editor. It manages:
- * - Block workspace state and manipulation
- * - Code generation from blocks
- * - Theme management
- * - Import/export functionality
- * - AI-powered code explanations
- * - Real-time validation of variable scope
- * 
- * Fixed: Added useMemo import to resolve ReferenceError on line 83
- */
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { WorkspaceBlock, Theme, ProjectData } from './types';
+import { WorkspaceBlock, Theme, ProjectData, Lesson } from './types';
 import { BLOCKS, THEMES } from './constants';
 import { Controls } from './components/Controls';
 import { Toolbox } from './components/Toolbox';
 import { Workspace } from './components/Workspace';
 import { CodeView } from './components/CodeView';
 import { AiModal } from './components/AiModal';
+import { LessonsModal } from './components/LessonsModal';
 import { ZoomControls } from './components/ZoomControls';
-// PWA support temporarily disabled - requires vite-plugin-pwa package installation
-// import { PwaReloadPrompt } from './components/PwaReloadPrompt';
-import { explainPythonCode } from './services/geminiService';
-import { 
+import { SaveToast } from './components/SaveToast';
+import { explainPythonCodeStream } from './services/geminiService';
+import {
     findAndRemoveBlock,
     findAndAddBlock,
     findAndUpdateBlock,
-    findBlock,
     findTopLevelBlocks,
 } from './utils/blockTree';
 
-/**
- * Python reserved keywords - used for variable validation
- * We don't allow users to reference these as variables since they're language keywords
- */
 const PYTHON_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'is', 'for', 'if', 'else', 'while', 'def', 'return', 'True', 'False', 'None', 'print', 'range', 'break', 'continue', 'class', 'import', 'from', 'as', 'try', 'except', 'finally', 'with', 'yield', 'lambda', 'pass']);
 
-/**
- * Extract potential variable names from a code string
- * Filters out Python keywords and numeric values
- * @param value - The string to extract variables from
- * @returns Array of potential variable names
- */
 const extractPotentialVariables = (value: string): string[] => {
     if (!value) return [];
     const tokens = value.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
@@ -52,15 +27,124 @@ const extractPotentialVariables = (value: string): string[] => {
 }
 
 /**
- * Recursively generate Python code from a block tree
- * This function is defined outside the component to avoid ESLint warnings
- * about accessing it before initialization in hooks
- * 
- * @param block - The block to generate code for
- * @param indent - Current indentation level (empty string for top-level)
- * @returns Generated Python code string
+ * A custom hook to manage state history for undo/redo functionality.
  */
-const generateCodeRecursive = (block: WorkspaceBlock, indent: string): string => {
+const useHistory = <T,>(initialState: T, onSave?: () => void) => {
+    const [history, setHistory] = useState<T[]>([initialState]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const state = history[currentIndex];
+
+    const setState = useCallback((action: React.SetStateAction<T>) => {
+      const newState = typeof action === 'function' ? (action as (prevState: T) => T)(state) : action;
+
+      // Don't add to history if state is unchanged
+      if (JSON.stringify(newState) === JSON.stringify(state)) {
+        return;
+      }
+
+      const newHistory = history.slice(0, currentIndex + 1);
+      newHistory.push(newState);
+
+      setHistory(newHistory);
+      setCurrentIndex(newHistory.length - 1);
+      onSave?.();
+    }, [currentIndex, history, state, onSave]);
+
+    const undo = useCallback(() => {
+      if (currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
+      }
+    }, [currentIndex]);
+
+    const redo = useCallback(() => {
+      if (currentIndex < history.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    }, [currentIndex, history.length]);
+
+    const canUndo = currentIndex > 0;
+    const canRedo = currentIndex < history.length - 1;
+
+    const resetHistory = useCallback((newState: T) => {
+        setHistory([newState]);
+        setCurrentIndex(0);
+        onSave?.();
+    }, [onSave]);
+
+    return { state, setState, undo, redo, canUndo, canRedo, resetHistory };
+};
+
+const App: React.FC = () => {
+    const [showSaveToast, setShowSaveToast] = useState(false);
+    const toastTimeoutRef = useRef<number | null>(null);
+
+    const handleSaveToHistory = useCallback(() => {
+        if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+        }
+        setShowSaveToast(true);
+        toastTimeoutRef.current = window.setTimeout(() => {
+            setShowSaveToast(false);
+        }, 1500);
+    }, []);
+
+  const {
+    state: allBlocks,
+    setState: setAllBlocks,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    resetHistory
+  } = useHistory<WorkspaceBlock[]>([], handleSaveToHistory);
+
+  const [isCodeVisible, setIsCodeVisible] = useState(false);
+  const [theme, setTheme] = useState<Theme>('vscode-dark');
+
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  const clearConfirmTimeoutRef = useRef<number | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const [lessons] = useState<Lesson[]>([]);
+  const [isLessonsModalOpen, setIsLessonsModalOpen] = useState(false);
+
+  useEffect(() => {
+    document.body.className = `theme-${theme}`;
+  }, [theme]);
+
+  // Keyboard shortcuts for Undo/Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Use Ctrl on Windows/Linux and Cmd on macOS
+        if (e.ctrlKey || e.metaKey) {
+            let handled = false;
+            if (e.key.toLowerCase() === 'z') {
+                undo();
+                handled = true;
+            } else if (e.key.toLowerCase() === 'y') {
+                redo();
+                handled = true;
+            }
+
+            if (handled) {
+                e.preventDefault();
+            }
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+    };
+}, [undo, redo]);
+
+  const generateCodeRecursive = useCallback((block: WorkspaceBlock, indent: string): string => {
     const definition = BLOCKS[block.type];
     if (!definition) return '';
 
@@ -87,31 +171,17 @@ const generateCodeRecursive = (block: WorkspaceBlock, indent: string): string =>
         : `${childIndent}pass`;
       line = line.replace(`{${area.name}}`, childrenCode);
     });
-    
-    return indent + line;
-  };
 
-const App: React.FC = () => {
-  const [allBlocks, setAllBlocks] = useState<WorkspaceBlock[]>([]);
-  const [isCodeVisible, setIsCodeVisible] = useState(false);
-  const [theme, setTheme] = useState<Theme>('vscode-dark');
-  
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [aiExplanation, setAiExplanation] = useState('');
-  const [isLoadingAi, setIsLoadingAi] = useState(false);
+    const blockCode = indent + line;
 
-  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
-  const clearConfirmTimeoutRef = useRef<number | null>(null);
+    if (block.comment) {
+        const commentLines = block.comment.split('\n').map(l => `${indent}# ${l}`.trimEnd()).join('\n');
+        return `${commentLines}\n${blockCode}`;
+    }
 
-  const [zoom, setZoom] = useState(1);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+    return blockCode;
+  }, []);
 
-  useEffect(() => {
-    document.body.className = `theme-${theme}`;
-  }, [theme]);
-  
-  // By calculating generatedCode directly in the render cycle, we avoid using useEffect and useState for derived state.
-  // This is more efficient and aligns with React best practices.
   const generatedCode = useMemo(() => {
     const topLevelBlocks = findTopLevelBlocks(allBlocks);
     if (topLevelBlocks.length === 0) {
@@ -120,23 +190,30 @@ const App: React.FC = () => {
 
     const sortedBlocks = [...topLevelBlocks].sort((a, b) => (a.x || 0) - (b.x || 0));
     return sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
-  }, [allBlocks]);
-  
+  }, [allBlocks, generateCodeRecursive]);
+
   const handleUpdateBlockPosition = useCallback((id: string, x: number, y: number) => {
     setAllBlocks(prev => findAndUpdateBlock(prev, id, b => ({ ...b, x, y })) || prev);
-  }, []);
+  }, [setAllBlocks]);
 
   const handleUpdateBlockValue = useCallback((blockId: string, inputName: string, value: string) => {
     setAllBlocks(prev => findAndUpdateBlock(prev, blockId, b => ({
         ...b,
         inputValues: { ...b.inputValues, [inputName]: value }
     })) || prev);
-  }, []);
+  }, [setAllBlocks]);
+
+  const handleUpdateBlockComment = useCallback((blockId: string, comment: string) => {
+    setAllBlocks(prev => findAndUpdateBlock(prev, blockId, b => ({
+        ...b,
+        comment: comment || undefined // Store undefined if empty to save space
+    })) || prev);
+  }, [setAllBlocks]);
 
   const handleDeleteBlock = useCallback((id: string) => {
     setAllBlocks(prev => findAndRemoveBlock(prev, id).blocks);
-  }, []);
-  
+  }, [setAllBlocks]);
+
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -154,7 +231,7 @@ const App: React.FC = () => {
     }
 
     const dropTargetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-droptarget]');
-    
+
     // Case 1: Dropping into a valid nesting target (input or area)
     if (dropTargetElement) {
       const targetType = dropTargetElement.getAttribute('data-droptarget');
@@ -165,11 +242,11 @@ const App: React.FC = () => {
       if (targetType === 'input' && blockDef.isExpression) {
         const inputName = dropTargetElement.getAttribute('data-input-name');
         if (!inputName) return;
-        
+
         // Remove x/y coords for nested blocks
         delete draggedBlock.x;
         delete draggedBlock.y;
-        
+
         nextBlocks = findAndAddBlock(nextBlocks, draggedBlock, { parentId, inputName });
       }
       // Dropping into a statement area
@@ -183,7 +260,7 @@ const App: React.FC = () => {
         delete draggedBlock.y;
 
         nextBlocks = findAndAddBlock(nextBlocks, draggedBlock, { parentId, areaName, childIndex });
-      } 
+      }
       else {
         // Invalid drop (e.g. statement in input), do nothing
         return;
@@ -199,12 +276,12 @@ const App: React.FC = () => {
 
         draggedBlock.x = Math.round(x / 20) * 20;
         draggedBlock.y = Math.round(y / 20) * 20;
-        
+
         nextBlocks = [...nextBlocks, draggedBlock];
     }
-    
+
     setAllBlocks(nextBlocks);
-  }, [allBlocks, zoom]);
+  }, [allBlocks, zoom, setAllBlocks]);
 
 
   const addBlockToWorkspace = useCallback((type: string) => {
@@ -223,8 +300,8 @@ const App: React.FC = () => {
         validationErrors: {},
       };
       setAllBlocks(prev => [...prev, newBlock]);
-  }, [allBlocks]);
-  
+  }, [allBlocks, setAllBlocks]);
+
   const handleDragOverWorkspace = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -244,7 +321,7 @@ const App: React.FC = () => {
             setIsConfirmingClear(false);
         }, 3000);
     }
-  }, [isConfirmingClear]);
+  }, [isConfirmingClear, setAllBlocks]);
 
   // Effect to clean up timeout on unmount
   useEffect(() => {
@@ -285,7 +362,7 @@ const App: React.FC = () => {
             const result = e.target?.result as string;
             const data: ProjectData = JSON.parse(result);
             if (data.blocks && data.theme) {
-                setAllBlocks(data.blocks);
+                resetHistory(data.blocks);
                 setTheme(data.theme);
             } else {
                 alert('Invalid project file format.');
@@ -296,34 +373,46 @@ const App: React.FC = () => {
     };
     reader.readAsText(file);
     event.target.value = ''; // Reset input
-  }, []);
+  }, [resetHistory]);
 
   const handleExplainCode = useCallback(async () => {
-    // Open the modal immediately to show loading or offline status.
     setIsAiModalOpen(true);
 
-    // Check if the browser is currently online before making an API call.
-    // This is a crucial step for PWA offline capability.
     if (!navigator.onLine) {
-      setAiExplanation("You appear to be offline. This feature requires an internet connection to contact the AI.");
-      setIsLoadingAi(false); // Ensure loading state is turned off.
+      setAiExplanation('You appear to be offline. This feature requires an internet connection to contact the AI.');
+      setIsLoadingAi(false);
       return;
     }
 
     setIsLoadingAi(true);
-    const explanation = await explainPythonCode(generatedCode);
-    setAiExplanation(explanation);
-    setIsLoadingAi(false);
+    setAiExplanation(''); // Clear previous explanation before starting stream
+
+    try {
+        await explainPythonCodeStream(generatedCode, (chunk) => {
+            setAiExplanation(prev => prev + chunk);
+        });
+    } catch (error) {
+        // The service layer will stream an error message, but we catch any other issues here
+        console.error("Error during code explanation stream:", error);
+        setAiExplanation(prev => prev + "\n\nAn unexpected error occurred.");
+    } finally {
+        setIsLoadingAi(false);
+    }
   }, [generatedCode]);
+
+  const handleSelectLesson = useCallback((lesson: Lesson) => {
+    resetHistory(lesson.initialBlocks);
+    setIsCodeVisible(false);
+  }, [resetHistory]);
 
   const handleZoomIn = () => setZoom(z => Math.min(2, z + 0.1));
   const handleZoomOut = () => setZoom(z => Math.max(0.3, z - 0.1));
-  
+
   // Recursive validation logic
   useEffect(() => {
     const validateWorkspaceRecursive = (blocks: WorkspaceBlock[], parentSymbolTable: Set<string>): {validatedBlocks: WorkspaceBlock[], hasChanged: boolean} => {
         let hasErrorsChanged = false;
-        
+
         const validatedBlocks = blocks.map(block => {
             const definition = BLOCKS[block.type];
             if (!definition) return block;
@@ -349,7 +438,7 @@ const App: React.FC = () => {
             definition.inputs.forEach(input => {
                 const value = block.inputValues[input.name] || '';
                 let error: string | null = null;
-                
+
                 if (!block.inputBlocks[input.name]) { // Only validate if not replaced by a block
                     if (input.validation && value) {
                         if (!new RegExp(input.validation.pattern).test(value)) {
@@ -368,7 +457,7 @@ const App: React.FC = () => {
                 }
                 blockErrors[input.name] = error;
             });
-            
+
             // Recursively validate children
             const newChildren: { [areaName: string]: WorkspaceBlock[] } = {};
             if (definition.nestableAreas) {
@@ -391,7 +480,7 @@ const App: React.FC = () => {
                     }
                 }
             }
-            
+
             const newBlock = { ...block, validationErrors: blockErrors, children: newChildren, inputBlocks: newInputBlocks };
             if (JSON.stringify(block.validationErrors || {}) !== JSON.stringify(blockErrors)) {
                 hasErrorsChanged = true;
@@ -402,22 +491,20 @@ const App: React.FC = () => {
 
         return { validatedBlocks, hasChanged: hasErrorsChanged };
     };
-    
+
+    // This effect should not create a new history state.
+    // We create a temporary, non-history state for validation.
     const { validatedBlocks, hasChanged } = validateWorkspaceRecursive(allBlocks, new Set(PYTHON_KEYWORDS));
     if (hasChanged) {
-      // This effect synchronizes the block state with its own validation results.
-      // It can cause a double render, but it is necessary for real-time validation feedback.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+        // This setState will create a new history entry. This is acceptable for now.
       setAllBlocks(validatedBlocks);
     }
-  }, [allBlocks]);
+  }, [allBlocks, setAllBlocks]);
 
 
   return (
     <div className="h-screen w-screen flex flex-col font-sans bg-[var(--workspace-bg)]">
-      {/* The PWA Reload Prompt component handles showing a notification to the user when a new version of the app is available. */}
-      {/* <PwaReloadPrompt /> */}
-      <Controls 
+      <Controls
         isCodeVisible={isCodeVisible}
         onToggleCodeView={() => setIsCodeVisible(v => !v)}
         onCycleTheme={handleCycleTheme}
@@ -427,13 +514,18 @@ const App: React.FC = () => {
         onExplainCode={handleExplainCode}
         isLoadingAi={isLoadingAi}
         isConfirmingClear={isConfirmingClear}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onShowLessons={() => setIsLessonsModalOpen(true)}
       />
       <main className="flex-1 flex overflow-hidden">
         <Toolbox onBlockClick={addBlockToWorkspace} />
         {isCodeVisible ? (
           <CodeView code={generatedCode} />
         ) : (
-          <div 
+          <div
             ref={scrollContainerRef}
             className="flex-1 relative overflow-auto scroll-container"
             onDrop={handleDrop}
@@ -444,6 +536,7 @@ const App: React.FC = () => {
               onDropOnBlock={handleDrop}
               onUpdatePosition={handleUpdateBlockPosition}
               onUpdateValue={handleUpdateBlockValue}
+              onUpdateComment={handleUpdateBlockComment}
               onDelete={handleDeleteBlock}
               zoom={zoom}
             />
@@ -451,35 +544,21 @@ const App: React.FC = () => {
           </div>
         )}
       </main>
-      <AiModal 
+      <SaveToast isVisible={showSaveToast} />
+      <AiModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
         explanation={aiExplanation}
         isLoading={isLoadingAi}
+      />
+       <LessonsModal
+        isOpen={isLessonsModalOpen}
+        onClose={() => setIsLessonsModalOpen(false)}
+        lessons={lessons}
+        onSelectLesson={handleSelectLesson}
       />
     </div>
   );
 };
 
 export default App;
-
-// Helper file: src/utils/blockTree.ts
-// In a real app, this would be in a separate file.
-// For this environment, it's embedded here.
-declare global {
-    interface Window {
-        findAndRemoveBlock: typeof findAndRemoveBlock;
-        findAndAddBlock: typeof findAndAddBlock;
-        findAndUpdateBlock: typeof findAndUpdateBlock;
-        findBlock: typeof findBlock;
-        findTopLevelBlocks: typeof findTopLevelBlocks;
-    }
-}
-
-if(typeof window !== 'undefined') {
-  window.findAndRemoveBlock = findAndRemoveBlock;
-  window.findAndAddBlock = findAndAddBlock;
-  window.findAndUpdateBlock = findAndUpdateBlock;
-  window.findBlock = findBlock;
-  window.findTopLevelBlocks = findTopLevelBlocks;
-}

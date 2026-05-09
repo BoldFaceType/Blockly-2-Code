@@ -1,21 +1,24 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { WorkspaceBlock, BlockDefinition, NestableAreaDefinition } from '../types';
 import { BLOCKS } from '../constants';
+import { CommentIcon } from './Icons';
 
 interface BlockProps {
   data: WorkspaceBlock;
   onUpdatePosition: (id: string, x: number, y: number) => void;
   onUpdateValue: (blockId: string, inputName: string, value: string) => void;
+  onUpdateComment: (blockId: string, comment: string) => void;
   onDelete: (id: string) => void;
   onDropOnBlock: (e: React.DragEvent<HTMLDivElement>) => void;
   zoom: number;
   isNested?: boolean;
 }
 
-export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateValue, onDelete, onDropOnBlock, zoom, isNested = false }) => {
+export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateValue, onUpdateComment, onDelete, onDropOnBlock, zoom, isNested = false }) => {
   const blockRef = useRef<HTMLDivElement>(null);
   const definition = BLOCKS[data.type];
+  const [isCommentEditorOpen, setIsCommentEditorOpen] = useState(false);
 
   const dragStateRef = useRef({ isDragging: false, offsetX: 0, offsetY: 0 });
 
@@ -86,7 +89,7 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
 
     const handleStart = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest('[data-droptarget]') || target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.closest('.delete-btn')) {
+      if (target.closest('[data-droptarget]') || target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.closest('.delete-btn') || target.closest('.comment-btn') || target.closest('.comment-editor')) {
         return;
       }
       e.stopPropagation();
@@ -108,7 +111,7 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
   }, [data.id, isNested]);
 
   if (!definition) {
-    return <div className="text-red-500">Error: Block type "{data.type}" not found.</div>;
+    return <div className="text-red-500">Error: Block type &quot;{data.type}&quot; not found.</div>;
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>, name: string) => {
@@ -134,6 +137,7 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
               data={nestedBlock}
               onUpdatePosition={onUpdatePosition}
               onUpdateValue={onUpdateValue}
+              onUpdateComment={onUpdateComment}
               onDelete={onDelete}
               onDropOnBlock={onDropOnBlock}
               zoom={zoom}
@@ -190,6 +194,7 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
                 data={child}
                 onUpdatePosition={onUpdatePosition}
                 onUpdateValue={onUpdateValue}
+                onUpdateComment={onUpdateComment}
                 onDelete={onDelete}
                 onDropOnBlock={onDropOnBlock}
                 zoom={zoom}
@@ -211,18 +216,39 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
 
   const baseClasses = `text-white p-3 rounded-lg shadow-xl border-l-8 transition-all duration-100 ease-out touch-none`;
   const positionClasses = isNested ? 'relative' : 'absolute cursor-move';
-  const pillClasses = isNested && definition.isExpression ? `inline-block p-1 rounded-full border ${definition.accent}` : 'w-full';
   
   if (isNested && definition.isExpression) {
     return (
         <div
             id={data.id}
             ref={blockRef}
-            className={`${definition.color} p-1.5 rounded-md text-xs font-semibold select-none border-2 border-white/30`}
+            className={`${definition.color} p-1.5 rounded-md text-xs font-semibold select-none border-2 border-white/30 relative`}
             draggable
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
+            <button 
+                onClick={() => setIsCommentEditorOpen(prev => !prev)} 
+                className={`comment-btn absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center transition-colors z-20 ${data.comment ? 'bg-yellow-500 text-white hover:bg-yellow-600' : 'bg-gray-400 text-white hover:bg-gray-500'}`}
+                title={data.comment ? "Edit comment" : "Add comment"}
+            >
+                <CommentIcon className="w-3 h-3" />
+            </button>
+            {isCommentEditorOpen && (
+                <div 
+                    className="comment-editor absolute top-0 left-full ml-2 w-64 bg-[var(--toolbox-bg)] p-2 rounded-lg shadow-2xl border border-[var(--border-color)] z-30"
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                >
+                    <textarea
+                        className="w-full h-24 bg-black/20 text-[var(--text-color)] p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                        placeholder="Add comment..."
+                        value={data.comment || ''}
+                        onChange={e => onUpdateComment(data.id, e.target.value)}
+                        autoFocus
+                    />
+                </div>
+            )}
             {definition.text}
         </div>
     )
@@ -244,6 +270,36 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-2.5 h-5 bg-[var(--workspace-bg)] border-2 border-[var(--border-color)] rounded-l-md z-0" />
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-full w-2.5 h-5 bg-inherit border-2 border-white/30 rounded-r-md z-0" />
             </>
+        )}
+        <button 
+          onClick={() => setIsCommentEditorOpen(prev => !prev)} 
+          className={`comment-btn absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-20 ${data.comment ? 'bg-yellow-500 text-white hover:bg-yellow-600' : 'bg-gray-400 text-white hover:bg-gray-500'}`}
+          title={data.comment ? "Edit comment" : "Add comment"}
+        >
+          <CommentIcon className="w-4 h-4" />
+        </button>
+        {isCommentEditorOpen && (
+            <div 
+                className="comment-editor absolute top-0 left-full ml-2 w-64 bg-[var(--toolbox-bg)] p-2 rounded-lg shadow-2xl border border-[var(--border-color)] z-30"
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+            >
+                <textarea
+                    className="w-full h-24 bg-black/20 text-[var(--text-color)] p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                    placeholder="Add comment..."
+                    value={data.comment || ''}
+                    onChange={e => onUpdateComment(data.id, e.target.value)}
+                    autoFocus
+                />
+                <div className="flex justify-end mt-2">
+                    <button 
+                        onClick={() => setIsCommentEditorOpen(false)}
+                        className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
         )}
         <button onClick={() => onDelete(data.id)} className="delete-btn absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-sm hover:bg-red-600 transition-colors z-20">
             &times;

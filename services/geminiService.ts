@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 const API_KEY = process.env.API_KEY;
@@ -10,34 +9,52 @@ if (API_KEY) {
   console.warn("API_KEY environment variable not found. AI features will be disabled.");
 }
 
-export const explainPythonCode = async (code: string): Promise<string> => {
+const explanationCache = new Map<string, string>();
+
+export const explainPythonCodeStream = async (code: string, onChunk: (chunk: string) => void): Promise<void> => {
   if (!ai) {
-    return Promise.resolve("AI features are disabled. Please provide a Gemini API key to enable them.");
+    onChunk("AI features are disabled. Please provide a Gemini API key to enable them.");
+    return;
+  }
+
+  const trimmedCode = code.trim();
+  if (explanationCache.has(trimmedCode)) {
+    onChunk(explanationCache.get(trimmedCode)!);
+    return;
   }
 
   const prompt = `
-    You are an expert Python programming teacher. 
-    Explain the following Python code to a beginner.
-    Break down the logic step-by-step. Use a friendly and encouraging tone.
-    Use markdown for formatting, including code blocks for snippets and bullet points for clarity.
+    You are an expert Python programmer.
+    Concisely explain the following Python code.
+    Focus on the code's main purpose and logic.
+    Use markdown for formatting.
 
     Python Code:
     \`\`\`python
-    ${code.trim() || "# The workspace is empty. Add some blocks to get started!"}
+    ${trimmedCode || "# The workspace is empty. Add some blocks to get started!"}
     \`\`\`
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: prompt,
     });
-    return response.text;
+
+    let fullExplanation = '';
+    for await (const chunk of response) {
+        const chunkText = chunk.text;
+        fullExplanation += chunkText;
+        onChunk(chunkText);
+    }
+    explanationCache.set(trimmedCode, fullExplanation);
+
   } catch (error) {
     console.error("Error explaining code with Gemini:", error);
+    let errorMessage = "An unknown error occurred while explaining the code.";
     if (error instanceof Error) {
-        return `An error occurred while explaining the code: ${error.message}`;
+        errorMessage = `An error occurred while explaining the code: ${error.message}`;
     }
-    return "An unknown error occurred while explaining the code.";
+    onChunk(errorMessage);
   }
 };
