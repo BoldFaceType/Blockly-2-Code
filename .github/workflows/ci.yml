@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: TypeScript build
+    name: Web quality gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,12 +21,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Type-check
         run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Audit high severity dependencies
+        run: npm audit --audit-level=high
 
       - name: Build
         run: npm run build

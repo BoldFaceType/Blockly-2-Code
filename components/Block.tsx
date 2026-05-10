@@ -111,7 +111,7 @@ export const Block: React.FC<BlockProps> = ({ data, onUpdatePosition, onUpdateVa
   }, [data.id, isNested]);
 
   if (!definition) {
-    return <div className="text-red-500">Error: Block type "{data.type}" not found.</div>;
+    return <div className="text-red-500">Error: Block type &quot;{data.type}&quot; not found.</div>;
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>, name: string) => {

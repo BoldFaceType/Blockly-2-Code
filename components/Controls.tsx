@@ -1,6 +1,5 @@
 
 import React, { useRef } from 'react';
-import { Theme } from '../types';
 import { CodeIcon, BlocksIcon, ThemeIcon, ExportIcon, ImportIcon, ClearIcon, AiIcon, UndoIcon, RedoIcon, BookOpenIcon } from './Icons';
 
 interface ControlsProps {

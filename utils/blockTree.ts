@@ -22,7 +22,7 @@ export const findAndRemoveBlock = (blocks: WorkspaceBlock[], blockId: string): {
         return blockArray.map(block => {
             if (removedBlock) return block; // Optimization: stop searching once found
 
-            let newBlock = { ...block };
+            const newBlock = { ...block };
             let hasChanged = false;
 
             // Check inputBlocks
@@ -133,12 +133,10 @@ export const findAndUpdateBlock = (blocks: WorkspaceBlock[], blockId: string, up
             }
 
             const newChildren = { ...block.children };
-            let hasChanged = false;
             for (const key in newChildren) {
                 const updatedChildren = updateRecursive(newChildren[key]);
                 if (found) {
                     newChildren[key] = updatedChildren;
-                    hasChanged = true;
                     break;
                 }
             }
@@ -151,7 +149,6 @@ export const findAndUpdateBlock = (blocks: WorkspaceBlock[], blockId: string, up
                     const updatedInputBlocks = updateRecursive([inputBlock]);
                      if (found) {
                         newInputBlocks[key] = updatedInputBlocks[0];
-                        hasChanged = true;
                         break;
                     }
                 }

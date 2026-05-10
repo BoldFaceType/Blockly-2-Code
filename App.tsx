@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { WorkspaceBlock, Theme, ProjectData, Lesson } from './types';
 import { BLOCKS, THEMES } from './constants';
 import { Controls } from './components/Controls';
@@ -11,11 +11,10 @@ import { LessonsModal } from './components/LessonsModal';
 import { ZoomControls } from './components/ZoomControls';
 import { SaveToast } from './components/SaveToast';
 import { explainPythonCodeStream } from './services/geminiService';
-import { 
+import {
     findAndRemoveBlock,
     findAndAddBlock,
     findAndUpdateBlock,
-    findBlock,
     findTopLevelBlocks,
 } from './utils/blockTree';
 
@@ -33,40 +32,40 @@ const extractPotentialVariables = (value: string): string[] => {
 const useHistory = <T,>(initialState: T, onSave?: () => void) => {
     const [history, setHistory] = useState<T[]>([initialState]);
     const [currentIndex, setCurrentIndex] = useState(0);
-  
+
     const state = history[currentIndex];
-  
+
     const setState = useCallback((action: React.SetStateAction<T>) => {
       const newState = typeof action === 'function' ? (action as (prevState: T) => T)(state) : action;
-      
+
       // Don't add to history if state is unchanged
       if (JSON.stringify(newState) === JSON.stringify(state)) {
         return;
       }
-  
+
       const newHistory = history.slice(0, currentIndex + 1);
       newHistory.push(newState);
-      
+
       setHistory(newHistory);
       setCurrentIndex(newHistory.length - 1);
       onSave?.();
     }, [currentIndex, history, state, onSave]);
-  
+
     const undo = useCallback(() => {
       if (currentIndex > 0) {
         setCurrentIndex(currentIndex - 1);
       }
     }, [currentIndex]);
-  
+
     const redo = useCallback(() => {
       if (currentIndex < history.length - 1) {
         setCurrentIndex(currentIndex + 1);
       }
     }, [currentIndex, history.length]);
-  
+
     const canUndo = currentIndex > 0;
     const canRedo = currentIndex < history.length - 1;
-  
+
     const resetHistory = useCallback((newState: T) => {
         setHistory([newState]);
         setCurrentIndex(0);
@@ -90,20 +89,19 @@ const App: React.FC = () => {
         }, 1500);
     }, []);
 
-  const { 
-    state: allBlocks, 
-    setState: setAllBlocks, 
-    undo, 
-    redo, 
-    canUndo, 
+  const {
+    state: allBlocks,
+    setState: setAllBlocks,
+    undo,
+    redo,
+    canUndo,
     canRedo,
     resetHistory
   } = useHistory<WorkspaceBlock[]>([], handleSaveToHistory);
 
   const [isCodeVisible, setIsCodeVisible] = useState(false);
   const [theme, setTheme] = useState<Theme>('vscode-dark');
-  const [generatedCode, setGeneratedCode] = useState('');
-  
+
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiExplanation, setAiExplanation] = useState('');
   const [isLoadingAi, setIsLoadingAi] = useState(false);
@@ -113,8 +111,8 @@ const App: React.FC = () => {
 
   const [zoom, setZoom] = useState(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+
+  const [lessons] = useState<Lesson[]>([]);
   const [isLessonsModalOpen, setIsLessonsModalOpen] = useState(false);
 
   useEffect(() => {
@@ -145,7 +143,7 @@ const App: React.FC = () => {
         window.removeEventListener('keydown', handleKeyDown);
     };
 }, [undo, redo]);
-  
+
   const generateCodeRecursive = useCallback((block: WorkspaceBlock, indent: string): string => {
     const definition = BLOCKS[block.type];
     if (!definition) return '';
@@ -173,7 +171,7 @@ const App: React.FC = () => {
         : `${childIndent}pass`;
       line = line.replace(`{${area.name}}`, childrenCode);
     });
-    
+
     const blockCode = indent + line;
 
     if (block.comment) {
@@ -183,24 +181,17 @@ const App: React.FC = () => {
 
     return blockCode;
   }, []);
-  
-  const generateCode = useCallback(() => {
+
+  const generatedCode = useMemo(() => {
     const topLevelBlocks = findTopLevelBlocks(allBlocks);
     if (topLevelBlocks.length === 0) {
-      setGeneratedCode('# Add blocks to the workspace to generate Python code.');
-      return;
+      return '# Add blocks to the workspace to generate Python code.';
     }
 
     const sortedBlocks = [...topLevelBlocks].sort((a, b) => (a.x || 0) - (b.x || 0));
-    const code = sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
-    setGeneratedCode(code);
+    return sortedBlocks.map(block => generateCodeRecursive(block, '')).join('\n');
   }, [allBlocks, generateCodeRecursive]);
 
-
-  useEffect(() => {
-    generateCode();
-  }, [allBlocks, generateCode]);
-  
   const handleUpdateBlockPosition = useCallback((id: string, x: number, y: number) => {
     setAllBlocks(prev => findAndUpdateBlock(prev, id, b => ({ ...b, x, y })) || prev);
   }, [setAllBlocks]);
@@ -222,7 +213,7 @@ const App: React.FC = () => {
   const handleDeleteBlock = useCallback((id: string) => {
     setAllBlocks(prev => findAndRemoveBlock(prev, id).blocks);
   }, [setAllBlocks]);
-  
+
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -240,7 +231,7 @@ const App: React.FC = () => {
     }
 
     const dropTargetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-droptarget]');
-    
+
     // Case 1: Dropping into a valid nesting target (input or area)
     if (dropTargetElement) {
       const targetType = dropTargetElement.getAttribute('data-droptarget');
@@ -251,11 +242,11 @@ const App: React.FC = () => {
       if (targetType === 'input' && blockDef.isExpression) {
         const inputName = dropTargetElement.getAttribute('data-input-name');
         if (!inputName) return;
-        
+
         // Remove x/y coords for nested blocks
         delete draggedBlock.x;
         delete draggedBlock.y;
-        
+
         nextBlocks = findAndAddBlock(nextBlocks, draggedBlock, { parentId, inputName });
       }
       // Dropping into a statement area
@@ -269,7 +260,7 @@ const App: React.FC = () => {
         delete draggedBlock.y;
 
         nextBlocks = findAndAddBlock(nextBlocks, draggedBlock, { parentId, areaName, childIndex });
-      } 
+      }
       else {
         // Invalid drop (e.g. statement in input), do nothing
         return;
@@ -285,10 +276,10 @@ const App: React.FC = () => {
 
         draggedBlock.x = Math.round(x / 20) * 20;
         draggedBlock.y = Math.round(y / 20) * 20;
-        
+
         nextBlocks = [...nextBlocks, draggedBlock];
     }
-    
+
     setAllBlocks(nextBlocks);
   }, [allBlocks, zoom, setAllBlocks]);
 
@@ -310,7 +301,7 @@ const App: React.FC = () => {
       };
       setAllBlocks(prev => [...prev, newBlock]);
   }, [allBlocks, setAllBlocks]);
-  
+
   const handleDragOverWorkspace = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -376,7 +367,7 @@ const App: React.FC = () => {
             } else {
                 alert('Invalid project file format.');
             }
-        } catch (error) {
+        } catch {
             alert('Error reading project file.');
         }
     };
@@ -386,6 +377,13 @@ const App: React.FC = () => {
 
   const handleExplainCode = useCallback(async () => {
     setIsAiModalOpen(true);
+
+    if (!navigator.onLine) {
+      setAiExplanation('You appear to be offline. This feature requires an internet connection to contact the AI.');
+      setIsLoadingAi(false);
+      return;
+    }
+
     setIsLoadingAi(true);
     setAiExplanation(''); // Clear previous explanation before starting stream
 
@@ -409,12 +407,12 @@ const App: React.FC = () => {
 
   const handleZoomIn = () => setZoom(z => Math.min(2, z + 0.1));
   const handleZoomOut = () => setZoom(z => Math.max(0.3, z - 0.1));
-  
+
   // Recursive validation logic
   useEffect(() => {
     const validateWorkspaceRecursive = (blocks: WorkspaceBlock[], parentSymbolTable: Set<string>): {validatedBlocks: WorkspaceBlock[], hasChanged: boolean} => {
         let hasErrorsChanged = false;
-        
+
         const validatedBlocks = blocks.map(block => {
             const definition = BLOCKS[block.type];
             if (!definition) return block;
@@ -440,7 +438,7 @@ const App: React.FC = () => {
             definition.inputs.forEach(input => {
                 const value = block.inputValues[input.name] || '';
                 let error: string | null = null;
-                
+
                 if (!block.inputBlocks[input.name]) { // Only validate if not replaced by a block
                     if (input.validation && value) {
                         if (!new RegExp(input.validation.pattern).test(value)) {
@@ -459,7 +457,7 @@ const App: React.FC = () => {
                 }
                 blockErrors[input.name] = error;
             });
-            
+
             // Recursively validate children
             const newChildren: { [areaName: string]: WorkspaceBlock[] } = {};
             if (definition.nestableAreas) {
@@ -482,7 +480,7 @@ const App: React.FC = () => {
                     }
                 }
             }
-            
+
             const newBlock = { ...block, validationErrors: blockErrors, children: newChildren, inputBlocks: newInputBlocks };
             if (JSON.stringify(block.validationErrors || {}) !== JSON.stringify(blockErrors)) {
                 hasErrorsChanged = true;
@@ -493,7 +491,7 @@ const App: React.FC = () => {
 
         return { validatedBlocks, hasChanged: hasErrorsChanged };
     };
-    
+
     // This effect should not create a new history state.
     // We create a temporary, non-history state for validation.
     const { validatedBlocks, hasChanged } = validateWorkspaceRecursive(allBlocks, new Set(PYTHON_KEYWORDS));
@@ -501,12 +499,12 @@ const App: React.FC = () => {
         // This setState will create a new history entry. This is acceptable for now.
       setAllBlocks(validatedBlocks);
     }
-  }, [allBlocks]); // dependency on `setAllBlocks` removed to prevent loops
+  }, [allBlocks, setAllBlocks]);
 
 
   return (
     <div className="h-screen w-screen flex flex-col font-sans bg-[var(--workspace-bg)]">
-      <Controls 
+      <Controls
         isCodeVisible={isCodeVisible}
         onToggleCodeView={() => setIsCodeVisible(v => !v)}
         onCycleTheme={handleCycleTheme}
@@ -527,7 +525,7 @@ const App: React.FC = () => {
         {isCodeVisible ? (
           <CodeView code={generatedCode} />
         ) : (
-          <div 
+          <div
             ref={scrollContainerRef}
             className="flex-1 relative overflow-auto scroll-container"
             onDrop={handleDrop}
@@ -547,7 +545,7 @@ const App: React.FC = () => {
         )}
       </main>
       <SaveToast isVisible={showSaveToast} />
-      <AiModal 
+      <AiModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
         explanation={aiExplanation}
